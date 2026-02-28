@@ -190,48 +190,51 @@ class AuthMiddleware(BaseHTTPMiddleware):
                         }
                     )
             
-            # Check usage limits
-            try:
-                from ..billing.plans import check_usage_limit
-                from ..persistence import get_db
-                from datetime import date
-                
-                db = get_db()
-                tenant_id = tenant_info["tenant_id"]
-                
-                # Check monthly limit
-                monthly_usage = db.get_tenant_usage(tenant_id)
-                if not check_usage_limit(tenant_plan, monthly_usage, "month"):
-                    return JSONResponse(
-                        status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                        content={
-                            "detail": f"Monthly usage limit exceeded for plan '{tenant_plan}'",
-                            "plan": tenant_plan,
-                            "usage": monthly_usage
-                        }
-                    )
-                
-                # Check daily limit
-                daily_usage = db.get_tenant_usage(tenant_id, date.today().isoformat())
-                if not check_usage_limit(tenant_plan, daily_usage, "day"):
-                    return JSONResponse(
-                        status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                        content={
-                            "detail": f"Daily usage limit exceeded for plan '{tenant_plan}'",
-                            "plan": tenant_plan,
-                            "usage": daily_usage
-                        }
-                    )
-                
-                # Store tenant info in request state
-                request.state.tenant_id = tenant_id
-                request.state.tenant_plan = tenant_plan
-                request.state.tenant_status = tenant_status
-                
-            except Exception as e:
-                logger.error(f"Error checking tenant limits: {e}", exc_info=True)
-                # Fail open for now (don't block requests on billing errors)
-                pass
+            tenant_id = tenant_info["tenant_id"]
+
+            # Always set tenant state so endpoints get the right tenant even if
+            # the usage-limit check below throws.
+            request.state.tenant_id = tenant_id
+            request.state.tenant_plan = tenant_plan
+            request.state.tenant_status = tenant_status
+
+            # Check usage limits — skip for billing management paths so users can
+            # always manage keys/billing regardless of their current usage.
+            if not path.startswith("/billing"):
+                try:
+                    from ..billing.plans import check_usage_limit
+                    from ..persistence import get_db
+                    from datetime import date
+
+                    db = get_db()
+
+                    # Check monthly limit
+                    monthly_usage = db.get_tenant_usage(tenant_id)
+                    if not check_usage_limit(tenant_plan, monthly_usage, "month"):
+                        return JSONResponse(
+                            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                            content={
+                                "detail": f"Monthly usage limit exceeded for plan '{tenant_plan}'",
+                                "plan": tenant_plan,
+                                "usage": monthly_usage
+                            }
+                        )
+
+                    # Check daily limit
+                    daily_usage = db.get_tenant_usage(tenant_id, date.today().isoformat())
+                    if not check_usage_limit(tenant_plan, daily_usage, "day"):
+                        return JSONResponse(
+                            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                            content={
+                                "detail": f"Daily usage limit exceeded for plan '{tenant_plan}'",
+                                "plan": tenant_plan,
+                                "usage": daily_usage
+                            }
+                        )
+
+                except Exception as e:
+                    logger.error(f"Error checking tenant limits: {e}", exc_info=True)
+                    # Fail open — don't block requests on billing errors
         elif (
             (os.getenv("EDON_ENV") == "development" or os.getenv("ENVIRONMENT") == "development")
             and token == config.API_TOKEN
