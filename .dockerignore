@@ -20,4 +20,4 @@ ui/
 nginx/
 examples/
 benchmarking.py
-audit.py
+# NOTE: audit.py, observation.py, governor.py etc. are runtime modules — do NOT exclude them
