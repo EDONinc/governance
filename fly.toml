@@ -2,26 +2,33 @@ app = "edon-gateway"
 primary_region = "iad"
 
 [build]
-
-[http_service]
-  internal_port = 8000
-  force_https = true
-  auto_stop_machines = "stop"
-  auto_start_machines = true
-  min_machines_running = 1
+  dockerfile = "Dockerfile"
 
 [env]
-  EDON_AUTH_ENABLED = "true"
-  EDON_CREDENTIALS_STRICT = "true"
-  EDON_TOKEN_HARDENING = "true"
-  EDON_VALIDATE_STRICT = "true"
-  EDON_LOG_LEVEL = "INFO"
-  EDON_JSON_LOGGING = "true"
-  EDON_METRICS_ENABLED = "true"
-  EDON_RATE_LIMIT_ENABLED = "true"
-  EDON_CORS_ORIGINS = "http://localhost:5173,http://localhost:3000,https://edoncore.com"
+  EDON_ENV = "production"
+  ENVIRONMENT = "production"
+  EDON_HOST = "0.0.0.0"
+  EDON_PORT = "8080"
+  EDON_WORKERS = "4"
+  EDON_DATABASE_PATH = "/app/data/edon_gateway.db"
+  PYTHONPATH = "/app"
+  EDON_CORS_ORIGINS = "https://edoncore.com,https://www.edoncore.com,https://agent.edoncore.com,https://console.edoncore.com,https://edon-gateway.fly.dev"
+  CLERK_JWKS_URL = "https://clerk.edoncore.com/.well-known/jwks.json"
+  EDON_ALLOW_ENV_TOKEN_IN_PROD = "true"
+
+[[mounts]]
+  source = "edon_gateway_data"
+  destination = "/app/data"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = false
+  auto_start_machines = true
+  min_machines_running = 1
+  processes = ["app"]
 
 [[vm]]
-  memory = "512mb"
+  memory = "1024mb"
   cpu_kind = "shared"
-  cpus = 1
+  cpus = 2

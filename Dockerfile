@@ -17,9 +17,9 @@ ENV PYTHONPATH=/app
 # Persisted data (mount volume at /app/data)
 RUN mkdir -p /app/data
 
-EXPOSE 8000
+EXPOSE 8080
 
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD curl -sf http://localhost:8000/health || exit 1
+    CMD curl -sf http://localhost:${EDON_PORT:-8080}/health || exit 1
 
-CMD ["python", "-m", "uvicorn", "edon_gateway.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["sh", "-c", "python -m uvicorn edon_gateway.main:app --host 0.0.0.0 --port ${EDON_PORT:-8080}"]
