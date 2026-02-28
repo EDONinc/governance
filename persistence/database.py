@@ -1638,6 +1638,20 @@ class Database:
             """, (now, api_key_id))
             conn.commit()
     
+    def delete_api_key(self, api_key_id: str, tenant_id=None) -> bool:
+        """Hard-delete an API key, scoped to a tenant for safety."""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            if tenant_id is not None:
+                cursor.execute(
+                    "DELETE FROM api_keys WHERE id = ? AND tenant_id = ?",
+                    (api_key_id, tenant_id),
+                )
+            else:
+                cursor.execute("DELETE FROM api_keys WHERE id = ?", (api_key_id,))
+            conn.commit()
+            return cursor.rowcount > 0
+
     def revoke_api_key(self, api_key_id: str) -> bool:
         """Revoke an API key.
         
@@ -1670,8 +1684,8 @@ class Database:
             cursor = conn.cursor()
             cursor.execute("""
                 SELECT id, name, status, key_hash, created_at, last_used_at
-                FROM api_keys 
-                WHERE tenant_id = ?
+                FROM api_keys
+                WHERE tenant_id = ? AND status != 'revoked'
                 ORDER BY created_at DESC
             """, (tenant_id,))
             
