@@ -74,6 +74,77 @@ def verify_token(token: str) -> tuple[bool, Optional[Dict[str, Any]]]:
     return False, None
 
 
+def verify_clerk_token(token: str) -> Optional[Dict[str, Any]]:
+    """Verify a Clerk JWT and return claims if valid, None otherwise."""
+    jwks_url = os.getenv("CLERK_JWKS_URL", "")
+    if not jwks_url:
+        logger.warning("CLERK_JWKS_URL not set — cannot verify Clerk token")
+        return None
+    try:
+        import jwt
+        from jwt import PyJWKClient
+        jwks_client = PyJWKClient(jwks_url)
+        signing_key = jwks_client.get_signing_key_from_jwt(token)
+        claims = jwt.decode(
+            token,
+            signing_key.key,
+            algorithms=["RS256"],
+            options={"verify_exp": True},
+        )
+        return claims
+    except Exception as e:
+        logger.debug(f"Clerk token verification failed: {e}")
+        return None
+
+
+def resolve_tenant_for_clerk(claims: Dict[str, Any], fallback_email: str = "") -> Dict[str, Any]:
+    """Find or create a user + tenant for a verified Clerk token."""
+    import uuid
+    from ..persistence import get_db
+
+    db = get_db()
+    sub = claims.get("sub", "")
+    email = (
+        claims.get("email")
+        or claims.get("primary_email_address_id")
+        or fallback_email
+        or f"{sub}@clerk.user"
+    )
+
+    # Look up existing user by Clerk subject
+    existing_user = db.get_user_by_auth("clerk", sub)
+    if existing_user:
+        user_id = existing_user["id"]
+    else:
+        user_id = str(uuid.uuid4())
+        try:
+            db.create_user(user_id, email, "clerk", sub)
+        except Exception:
+            # User may have been created in a concurrent request — re-fetch
+            existing_user = db.get_user_by_auth("clerk", sub)
+            if existing_user:
+                user_id = existing_user["id"]
+
+    # Look up or create tenant for this user
+    tenant = db.get_tenant_by_user_id(user_id)
+    if not tenant:
+        tenant_id = f"tenant_{uuid.uuid4().hex[:16]}"
+        db.create_tenant(tenant_id, user_id)
+        tenant = db.get_tenant(tenant_id) or {
+            "id": tenant_id,
+            "plan": "free",
+            "status": "trial",
+        }
+
+    return {
+        "tenant_id": tenant["id"],
+        "user_id": user_id,
+        "email": email,
+        "plan": tenant.get("plan", "free"),
+        "status": tenant.get("status", "trial"),
+    }
+
+
 def get_token_from_header(request: Request) -> Optional[str]:
     """Extract token from request headers.
     
